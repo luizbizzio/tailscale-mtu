@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026 Luiz Bizzio
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+
 If (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
     Write-Host "This script must be run as an administrator. Please run it again using 'Run as Administrator'." -ForegroundColor Red
     exit
@@ -32,3 +35,4 @@ netsh interface ipv4 show interfaces
 Start-Sleep -Seconds 1
 
 Write-Host "Setup complete."
+
