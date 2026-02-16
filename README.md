@@ -175,4 +175,6 @@ For Windows, update the `1500` in the PowerShell script on `$scriptCommand` part
 
 ## License 📄
 
-This repository is licensed under the [MIT License](./LICENSE).
+This project is licensed under the [PolyForm Noncommercial License 1.0.0](./LICENSE).
+
+Commercial use, resale, and paid services are not permitted.
