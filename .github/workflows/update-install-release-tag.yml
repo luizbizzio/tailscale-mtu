@@ -1,0 +1,117 @@
+name: Update install release tag
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-install-release-tag
+  cancel-in-progress: true
+
+jobs:
+  update-install-release-tag:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read app version from tailscale-mtu.ps1
+        id: app
+        shell: python
+        run: |
+          import os
+          import pathlib
+          import re
+
+          script_path = pathlib.Path("windows/tailscale-mtu.ps1")
+          if not script_path.is_file():
+              raise SystemExit("Missing required file: windows/tailscale-mtu.ps1")
+
+          script = script_path.read_text(encoding="utf-8")
+          match = re.search(
+              r"\$(?:script:)?(?:AppVersion|Version)\s*=\s*['\"]([^'\"]+)['\"]",
+              script,
+          )
+
+          if not match:
+              raise SystemExit("Could not find $AppVersion, $script:AppVersion, $Version, or $script:Version in windows/tailscale-mtu.ps1")
+
+          version = match.group(1).strip()
+
+          if not re.fullmatch(r"[0-9]+(\.[0-9]+){1,3}([-+][0-9A-Za-z.-]+)?", version):
+              raise SystemExit(f"Invalid app version in windows/tailscale-mtu.ps1: {version}")
+
+          release_tag = f"v{version}"
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
+              f.write(f"version={version}\n")
+              f.write(f"tag={release_tag}\n")
+
+      - name: Update windows/install.ps1
+        shell: python
+        env:
+          RELEASE_TAG: ${{ steps.app.outputs.tag }}
+        run: |
+          import os
+          import pathlib
+          import re
+
+          path = pathlib.Path("windows/install.ps1")
+          if not path.is_file():
+              raise SystemExit("Missing required file: windows/install.ps1")
+
+          text = path.read_text(encoding="utf-8")
+          tag = os.environ["RELEASE_TAG"]
+
+          pattern = r"\$(?:script:)?DefaultReleaseTag\s*=\s*['\"][^'\"]*['\"]"
+          replacement = f"$DefaultReleaseTag = '{tag}'"
+
+          text, count = re.subn(pattern, replacement, text, count=1)
+
+          if count != 1:
+              raise SystemExit("Could not update $DefaultReleaseTag in windows/install.ps1")
+
+          path.write_text(text, encoding="utf-8", newline="\n")
+
+      - name: Validate PowerShell parsing
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $files = @(
+            'windows/install.ps1',
+            'windows/tailscale-mtu.ps1'
+          )
+          foreach ($file in $files) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($file, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Error $_.Message }
+              throw "PowerShell parse failed: $file"
+            }
+          }
+
+      - name: Commit and push if changed
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ steps.app.outputs.tag }}
+        run: |
+          if git diff --quiet -- windows/install.ps1; then
+            echo "windows/install.ps1 already points to $RELEASE_TAG"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add windows/install.ps1
+          git commit -m "chore(install): set release tag to $RELEASE_TAG"
+          git push
